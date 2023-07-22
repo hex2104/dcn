@@ -212,14 +212,14 @@ int main (int argc, char *argv[])
   std::string delay = "0.01ms";
   std::string access_bandwidth = "10Mbps";
   std::string access_delay = "45ms";
-  bool tracing = true;
+  bool tracing = false;
   std::string prefix_file_name = "TcpVariantsComparison";
   uint64_t data_mbytes = 0;
   uint32_t mtu_bytes = 400;
   uint16_t num_flows = 1;
   double duration = 100.0;
   uint32_t run = 0;
-  bool flow_monitor = true;
+  bool flow_monitor = false;
   bool pcap = false;
   bool sack = true;
   std::string queue_disc_type = "ns3::PfifoFastQueueDisc";

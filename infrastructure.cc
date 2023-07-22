@@ -61,13 +61,6 @@
 #include "ns3/yans-wifi-channel.h"
 #include "ns3/mobility-model.h"
 #include "ns3/internet-stack-helper.h"
-#include "ns3/core-module.h"
-#include "ns3/network-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/point-to-point-module.h"
-#include "ns3/applications-module.h"
-#include "ns3/traffic-control-module.h"
-#include "ns3/flow-monitor-module.h"
 
 using namespace ns3;
 
@@ -121,7 +114,7 @@ int main (int argc, char *argv[])
                       StringValue (phyMode));
 
   NodeContainer c;
-  c.Create (4);
+  c.Create (2);
 
   // The below set of helpers will help us to put together the wifi NICs we want
   WifiHelper wifi;
@@ -160,8 +153,6 @@ int main (int argc, char *argv[])
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
   positionAlloc->Add (Vector (0.0, 0.0, 0.0));
   positionAlloc->Add (Vector (5.0, 0.0, 0.0));
-  positionAlloc->Add (Vector (15.0, 5.0, 0.0));
-  positionAlloc->Add (Vector (20.0, 5.0, 0.0));
   mobility.SetPositionAllocator (positionAlloc);
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (c);
@@ -174,58 +165,29 @@ int main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer i = ipv4.Assign (devices);
 
- uint16_t port = 7;
-  Address localAddress (InetSocketAddress (Ipv4Address::GetAny (), port));
-  PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", localAddress);
-  ApplicationContainer sinkApp = packetSinkHelper.Install (c.Get (1));
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  Ptr<Socket> recvSink = Socket::CreateSocket (c.Get (0), tid);
+  InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
+  recvSink->Bind (local);
+  recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
 
-  sinkApp.Start (Seconds (0.0));
-  sinkApp.Stop (Seconds (10 + 0.1));
+  Ptr<Socket> source = Socket::CreateSocket (c.Get (1), tid);
+  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("255.255.255.255"), 80);
+  source->SetAllowBroadcast (true);
+  source->Connect (remote);
 
-  uint32_t payloadSize = 1448;
-  Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (payloadSize));
+  // Tracing
+  wifiPhy.EnablePcap ("wifi-simple-adhoc", devices);
 
-  OnOffHelper onoff ("ns3::UdpSocketFactory", Ipv4Address::GetAny ());
-  onoff.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
-  onoff.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
-  onoff.SetAttribute ("PacketSize", UintegerValue (payloadSize));
-  onoff.SetAttribute ("DataRate", StringValue ("50Mbps")); 
-  ApplicationContainer apps;
+  // Output what we are doing
+  NS_LOG_UNCOND ("Testing " << numPackets  << " packets sent with receiver rss " << rss );
 
-  InetSocketAddress rmt (i.GetAddress (1), port);
-  rmt.SetTos (0xb8);
-  AddressValue remoteAddress (rmt);
-  onoff.SetAttribute ("Remote", remoteAddress);
-  apps.Add (onoff.Install (c.Get (0)));
-  apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (10 + 0.1));
+  Simulator::ScheduleWithContext (source->GetNode ()->GetId (),
+                                  Seconds (1.0), &GenerateTraffic,
+                                  source, packetSize, numPackets, interPacketInterval);
 
-  FlowMonitorHelper flowmon;
-  Ptr<FlowMonitor> monitor = flowmon.InstallAll();
-
-  Simulator::Stop (Seconds (10 + 5));
   Simulator::Run ();
-
-  Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
-  std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
-  std::cout << std::endl << "*** Flow monitor statistics ***" << std::endl;
-  std::cout << "  Tx Packets/Bytes:   " << stats[1].txPackets
-            << " / " << stats[1].txBytes << std::endl;
-  std::cout << "  Offered Load: " << stats[1].txBytes * 8.0 / (stats[1].timeLastTxPacket.GetSeconds () - stats[1].timeFirstTxPacket.GetSeconds ()) / 1000000 << " Mbps" << std::endl;
-  std::cout << "  Rx Packets/Bytes:   " << stats[1].rxPackets
-            << " / " << stats[1].rxBytes << std::endl;
-  uint32_t packetsDroppedByQueueDisc = 0;
-  uint64_t bytesDroppedByQueueDisc = 0;
-  if (stats[1].packetsDropped.size () > Ipv4FlowProbe::DROP_QUEUE_DISC)
-    {
-      packetsDroppedByQueueDisc = stats[1].packetsDropped[Ipv4FlowProbe::DROP_QUEUE_DISC];
-      bytesDroppedByQueueDisc = stats[1].bytesDropped[Ipv4FlowProbe::DROP_QUEUE_DISC];
-    }
-  std::cout << "  Packets/Bytes Dropped by Queue Disc:   " << packetsDroppedByQueueDisc
-            << " / " << bytesDroppedByQueueDisc << std::endl;
- 
   Simulator::Destroy ();
-
 
   return 0;
 }

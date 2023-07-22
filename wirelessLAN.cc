@@ -23,9 +23,6 @@
 #include "ns3/internet-module.h"
 #include "ns3/yans-wifi-helper.h"
 #include "ns3/ssid.h"
-#include "ns3/netanim-module.h"
-#include "ns3/traffic-control-module.h"
-#include "ns3/flow-monitor-module.h"
 
 // Default Network Topology
 //
@@ -156,52 +153,34 @@ main (int argc, char *argv[])
   address.Assign (staDevices);
   address.Assign (apDevices);
 
-  
-  uint32_t payloadSize = 1448;
-  OnOffHelper onoff ("ns3::UdpSocketFactory", Ipv4Address::GetAny ());
-  onoff.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
-  onoff.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
-  onoff.SetAttribute ("PacketSize", UintegerValue (payloadSize));
-  onoff.SetAttribute ("DataRate", StringValue ("50Mbps")); //bit/s
-  
-//UDP Flow n0....n2
-  uint16_t port = 7;
-   //1. Install receiver (for packetsink) on node 2
-  Address localAddress (InetSocketAddress (Ipv4Address::GetAny (), port));
-  PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", localAddress);
-  ApplicationContainer sinkApp = packetSinkHelper.Install (csmaNodes.Get (2));
-  sinkApp.Start (Seconds (0.0));
-  sinkApp.Stop (Seconds (5.0));
-  //2. Install sender app on node 0
-  ApplicationContainer apps;
-  AddressValue remoteAddress (InetSocketAddress (csmaInterfaces.GetAddress (nCsma), port));
-  onoff.SetAttribute ("Remote", remoteAddress);
-  apps.Add (onoff.Install (wifiStaNodes.Get (0)));
-  apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (5.0));
+  UdpEchoServerHelper echoServer (9);
+
+  ApplicationContainer serverApps = echoServer.Install (csmaNodes.Get (nCsma));
+  serverApps.Start (Seconds (1.0));
+  serverApps.Stop (Seconds (10.0));
+
+  UdpEchoClientHelper echoClient (csmaInterfaces.GetAddress (nCsma), 9);
+  echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
+  echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.0)));
+  echoClient.SetAttribute ("PacketSize", UintegerValue (1024));
+
+  ApplicationContainer clientApps = 
+    echoClient.Install (wifiStaNodes.Get (nWifi - 1));
+  clientApps.Start (Seconds (2.0));
+  clientApps.Stop (Seconds (10.0));
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
-  FlowMonitorHelper flowmon;
-  Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+
   Simulator::Stop (Seconds (10.0));
 
-
-  Simulator::Run ();
-// Print per flow statistics
-  monitor->CheckForLostPackets ();
-  Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
-  std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
-
-  for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator iter = stats.begin (); iter != stats.end (); ++iter)
+  if (tracing == true)
     {
-  Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (iter->first);
-      NS_LOG_UNCOND("Flow ID: " << iter->first << " Src Addr " << t.sourceAddress << " Dst Addr " << t.destinationAddress);
-      NS_LOG_UNCOND("Tx Packets = " << iter->second.txPackets);
-      NS_LOG_UNCOND("Rx Packets = " << iter->second.rxPackets);
-      NS_LOG_UNCOND("lostPackets Packets = " << iter->second.lostPackets);
-      NS_LOG_UNCOND("Throughput: " << iter->second.rxBytes * 8.0 / (iter->second.timeLastRxPacket.GetSeconds()-iter->second.timeFirstTxPacket.GetSeconds()) / 1024  << " Kbps");
+      pointToPoint.EnablePcapAll ("third");
+      phy.EnablePcap ("third", apDevices.Get (0));
+      csma.EnablePcap ("third", csmaDevices.Get (0), true);
     }
 
+  Simulator::Run ();
   Simulator::Destroy ();
   return 0;
 }
