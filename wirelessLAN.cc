@@ -156,52 +156,67 @@ main (int argc, char *argv[])
   address.Assign (staDevices);
   address.Assign (apDevices);
 
-  
+  uint16_t port = 7;
+  Address localAddress (InetSocketAddress (Ipv4Address::GetAny (), port));
+  PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", localAddress);
+  ApplicationContainer sinkApp = packetSinkHelper.Install (csmaNodes.Get (2));
+
+  sinkApp.Start (Seconds (0.0));
+  sinkApp.Stop (Seconds (10));
+
   uint32_t payloadSize = 1448;
+  Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (payloadSize));
+
   OnOffHelper onoff ("ns3::UdpSocketFactory", Ipv4Address::GetAny ());
   onoff.SetAttribute ("OnTime",  StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
   onoff.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
   onoff.SetAttribute ("PacketSize", UintegerValue (payloadSize));
   onoff.SetAttribute ("DataRate", StringValue ("50Mbps")); //bit/s
-  
-//UDP Flow n0....n2
-  uint16_t port = 7;
-   //1. Install receiver (for packetsink) on node 2
-  Address localAddress (InetSocketAddress (Ipv4Address::GetAny (), port));
-  PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", localAddress);
-  ApplicationContainer sinkApp = packetSinkHelper.Install (csmaNodes.Get (2));
-  sinkApp.Start (Seconds (0.0));
-  sinkApp.Stop (Seconds (5.0));
-  //2. Install sender app on node 0
   ApplicationContainer apps;
-  AddressValue remoteAddress (InetSocketAddress (csmaInterfaces.GetAddress (nCsma), port));
+  InetSocketAddress rmt (interfaces.GetAddress (0), port);
+  rmt.SetTos (0xb8);
+  AddressValue remoteAddress (rmt);
   onoff.SetAttribute ("Remote", remoteAddress);
   apps.Add (onoff.Install (wifiStaNodes.Get (0)));
   apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (5.0));
-
+  apps.Stop (Seconds (10));
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+
   FlowMonitorHelper flowmon;
   Ptr<FlowMonitor> monitor = flowmon.InstallAll();
-  Simulator::Stop (Seconds (10.0));
 
-
+  Simulator::Stop (Seconds (10));
   Simulator::Run ();
-// Print per flow statistics
-  monitor->CheckForLostPackets ();
+
   Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
   std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
-
-  for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator iter = stats.begin (); iter != stats.end (); ++iter)
+  std::cout << std::endl << "*** Flow monitor statistics ***" << std::endl;
+  std::cout << "  Tx Packets/Bytes:   " << stats[1].txPackets
+            << " / " << stats[1].txBytes << std::endl;
+  std::cout << "  Offered Load: " << stats[1].txBytes * 8.0 / (stats[1].timeLastTxPacket.GetSeconds () - stats[1].timeFirstTxPacket.GetSeconds ()) / 1000000 << " Mbps" << std::endl;
+  std::cout << "  Rx Packets/Bytes:   " << stats[1].rxPackets
+            << " / " << stats[1].rxBytes << std::endl;
+  uint32_t packetsDroppedByQueueDisc = 0;
+  uint64_t bytesDroppedByQueueDisc = 0;
+  if (stats[1].packetsDropped.size () > Ipv4FlowProbe::DROP_QUEUE_DISC)
     {
-  Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (iter->first);
-      NS_LOG_UNCOND("Flow ID: " << iter->first << " Src Addr " << t.sourceAddress << " Dst Addr " << t.destinationAddress);
-      NS_LOG_UNCOND("Tx Packets = " << iter->second.txPackets);
-      NS_LOG_UNCOND("Rx Packets = " << iter->second.rxPackets);
-      NS_LOG_UNCOND("lostPackets Packets = " << iter->second.lostPackets);
-      NS_LOG_UNCOND("Throughput: " << iter->second.rxBytes * 8.0 / (iter->second.timeLastRxPacket.GetSeconds()-iter->second.timeFirstTxPacket.GetSeconds()) / 1024  << " Kbps");
+      packetsDroppedByQueueDisc = stats[1].packetsDropped[Ipv4FlowProbe::DROP_QUEUE_DISC];
+      bytesDroppedByQueueDisc = stats[1].bytesDropped[Ipv4FlowProbe::DROP_QUEUE_DISC];
     }
+  std::cout << "  Packets/Bytes Dropped by Queue Disc:   " << packetsDroppedByQueueDisc
+            << " / " << bytesDroppedByQueueDisc << std::endl;
+  uint32_t packetsDroppedByNetDevice = 0;
+  uint64_t bytesDroppedByNetDevice = 0;
+  if (stats[1].packetsDropped.size () > Ipv4FlowProbe::DROP_QUEUE)
+    {
+      packetsDroppedByNetDevice = stats[1].packetsDropped[Ipv4FlowProbe::DROP_QUEUE];
+      bytesDroppedByNetDevice = stats[1].bytesDropped[Ipv4FlowProbe::DROP_QUEUE];
+    }
+  std::cout << "  Packets/Bytes Dropped by NetDevice:   " << packetsDroppedByNetDevice
+            << " / " << bytesDroppedByNetDevice << std::endl;
 
+  
+  
   Simulator::Destroy ();
   return 0;
 }
