@@ -173,7 +173,7 @@ main (int argc, char *argv[])
   onoff.SetAttribute ("PacketSize", UintegerValue (payloadSize));
   onoff.SetAttribute ("DataRate", StringValue ("50Mbps")); //bit/s
   ApplicationContainer apps;
-  InetSocketAddress rmt (interfaces.GetAddress (0), port);
+  InetSocketAddress rmt (csmaInterfaces.GetAddress (0), port);
   rmt.SetTos (0xb8);
   AddressValue remoteAddress (rmt);
   onoff.SetAttribute ("Remote", remoteAddress);
