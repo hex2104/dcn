@@ -173,7 +173,7 @@ main (int argc, char *argv[])
   onoff.SetAttribute ("PacketSize", UintegerValue (payloadSize));
   onoff.SetAttribute ("DataRate", StringValue ("50Mbps")); //bit/s
   ApplicationContainer apps;
-  InetSocketAddress rmt (csmaInterfaces.GetAddress (0), port);
+  InetSocketAddress rmt (csmaInterfaces.GetAddress (1), port);
   rmt.SetTos (0xb8);
   AddressValue remoteAddress (rmt);
   onoff.SetAttribute ("Remote", remoteAddress);
@@ -205,16 +205,6 @@ main (int argc, char *argv[])
     }
   std::cout << "  Packets/Bytes Dropped by Queue Disc:   " << packetsDroppedByQueueDisc
             << " / " << bytesDroppedByQueueDisc << std::endl;
-  uint32_t packetsDroppedByNetDevice = 0;
-  uint64_t bytesDroppedByNetDevice = 0;
-  if (stats[1].packetsDropped.size () > Ipv4FlowProbe::DROP_QUEUE)
-    {
-      packetsDroppedByNetDevice = stats[1].packetsDropped[Ipv4FlowProbe::DROP_QUEUE];
-      bytesDroppedByNetDevice = stats[1].bytesDropped[Ipv4FlowProbe::DROP_QUEUE];
-    }
-  std::cout << "  Packets/Bytes Dropped by NetDevice:   " << packetsDroppedByNetDevice
-            << " / " << bytesDroppedByNetDevice << std::endl;
-
   
   
   Simulator::Destroy ();
